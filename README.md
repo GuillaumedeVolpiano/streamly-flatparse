@@ -59,6 +59,14 @@ On the head of an HTTP response of 241 bytes (`cabal bench`):
 | `parseBreak`, the head cut in three arrays | 1.18 μs |
 | `parseBreakOn` the empty line, in one array | 0.80 μs |
 
+On five thousand short lines, 28 kB, each parsed by `parseMany`:
+
+| | |
+|---|---|
+| flatparse alone, one parser for all the lines | 75 μs |
+| `parseMany`, the lines in one array | 228 μs |
+| `parseMany`, in arrays of 4096 bytes | 242 μs |
+
 With `parseBreak` the input is parsed again from its start at each array:
 cheap for what fits in a few arrays, wasteful for long inputs, which
 `parseBreakOn` parses once.

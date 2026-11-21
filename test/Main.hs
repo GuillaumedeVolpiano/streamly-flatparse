@@ -126,5 +126,8 @@ tests =
         , testCase "input cut short ends on a mismatch, and empty input gives nothing" $ do
             runIdentity (Stream.toList (parseMany 100 entry (StreamK.toStream (cut 4 "a:1\nb:")))) @?= [Right ("a", 1), Left Mismatch]
             runIdentity (Stream.toList (parseMany 100 entry (StreamK.toStream (cut 4 "")))) @?= []
+        , testProperty "an entry longer than the limit is the last element, however the stream is cut" $ \(Positive size) ->
+            runIdentity (Stream.toList (parseMany 8 entry (StreamK.toStream (cut size "a:1\nb:2\nvolume:30\nc:3\n"))))
+              === [Right ("a", 1), Right ("b", 2), Left (TooLong 8)]
         ]
     ]

@@ -95,30 +95,43 @@ parseArray parser array = case FP.runParser parser (StreamlyBS.fromArray array) 
 -- After a failure the stream given back is the input from its start,
 -- nothing lost.
 parseBreak :: Monad m => Int -> FP.Parser e a -> StreamK m (Array Word8) -> m (Either (ParseError e) a, StreamK m (Array Word8))
-parseBreak limit parser = gather BS.empty
+parseBreak limit parser input = do
+  (outcome, left, rest) <- advance limit parser BS.empty input
+  pure (outcome, prepend left rest)
+{-# INLINE parseBreak #-}
+
+-- | Run a parser on bytes already taken from a stream of arrays, followed
+-- by that stream: the result, the bytes taken that the parser did not
+-- read, and the stream after them. Nothing is copied unless the parser
+-- needs bytes of a further array: those left over are a slice of those
+-- given. After a failure the bytes given back are all those taken.
+advance :: Monad m => Int -> FP.Parser e a -> ByteString -> StreamK m (Array Word8) -> m (Either (ParseError e) a, ByteString, StreamK m (Array Word8))
+advance limit parser taken input
+  | BS.null taken = gather taken input
+  | otherwise = attempt False taken input
   where
-    gather buffered input =
-      StreamK.uncons input >>= \case
-        Nothing -> pure (either id id (attempt True buffered StreamK.nil))
-        Just (array, rest)
-          | BS.null bytes -> gather buffered rest
-          | otherwise -> either (const (gather (buffered <> bytes) rest)) pure (attempt False (buffered <> bytes) rest)
-          where
-            bytes = StreamlyBS.fromArray array
-    -- Try the parser on what has come so far, no further than the limit:
-    -- 'Right' when that settles it, 'Left' when more input may help.
+    -- Try the parser on what has come so far, no further than the limit.
     attempt atEnd gathered rest =
-      let (allowed, beyond) = BS.splitAt limit gathered
-          back leftover = prepend (leftover <> beyond) rest
+      let allowed = BS.take limit gathered
        in case FP.runParser parser allowed of
-            FP.OK found leftover -> Right (Right found, back leftover)
-            FP.Err problem -> Right (Left (ParserError problem), back allowed)
+            FP.OK found leftover -> pure (Right found, BS.drop (BS.length allowed - BS.length leftover) gathered, rest)
+            FP.Err problem -> pure (Left (ParserError problem), gathered, rest)
             FP.Fail
-              | atEnd && BS.null beyond -> Right (Left Mismatch, back allowed)
               -- With exactly as many bytes as allowed, whether the input
               -- is too long shows with the next array, or with the end.
-              | not (BS.null beyond) -> Right (Left (TooLong limit), back allowed)
-              | otherwise -> Left (Left Mismatch, back allowed)
+              | BS.length gathered > limit -> pure (Left (TooLong limit), gathered, rest)
+              | atEnd -> pure (Left Mismatch, gathered, rest)
+              | otherwise -> gather gathered rest
+    -- More input may help: add the next array that holds something.
+    gather gathered rest =
+      StreamK.uncons rest >>= \case
+        Nothing -> attempt True gathered StreamK.nil
+        Just (array, further)
+          | BS.null bytes -> gather gathered further
+          | otherwise -> attempt False (gathered <> bytes) further
+          where
+            bytes = StreamlyBS.fromArray array
+{-# INLINE advance #-}
 
 -- | Like 'parseBreak', without the stream that follows.
 parse :: Monad m => Int -> FP.Parser e a -> StreamK m (Array Word8) -> m (Either (ParseError e) a)
@@ -152,23 +165,32 @@ parseBreakOn delimiter limit parser = gather BS.empty
 -- does, and give what it finds. The stream ends with the input, or after
 -- the first error, which is its last element.
 parseMany :: Monad m => Int -> FP.Parser e a -> Stream m (Array Word8) -> Stream m (Either (ParseError e) a)
-parseMany limit parser = Stream.unfoldrM next . Just . StreamK.fromStream
+parseMany limit parser = Stream.unfoldrM next . Just . (,) BS.empty . StreamK.fromStream
   where
+    -- The bytes taken from the stream and not parsed yet, and the stream
+    -- after them: they are kept as they are from one result to the next,
+    -- not put back into the stream.
     next Nothing = pure Nothing
-    next (Just input) =
-      nonEmpty input >>= \case
-        Nothing -> pure Nothing
-        Just rest ->
-          parseBreak limit parser rest >>= \case
-            (Right found, following) -> pure (Just (Right found, Just following))
-            (Left problem, _) -> pure (Just (Left problem, Nothing))
-    -- The stream from its first array that holds something, if any.
+    next (Just (taken, input))
+      | BS.null taken =
+          nonEmpty input >>= \case
+            Nothing -> pure Nothing
+            Just (bytes, rest) -> result bytes rest
+      | otherwise = result taken input
+    result taken input =
+      advance limit parser taken input >>= \case
+        (Right found, left, rest) -> pure (Just (Right found, Just (left, rest)))
+        (Left problem, _, _) -> pure (Just (Left problem, Nothing))
+    -- The first array of the stream that holds something, if any.
     nonEmpty input =
       StreamK.uncons input >>= \case
         Nothing -> pure Nothing
         Just (array, rest)
-          | BS.null (StreamlyBS.fromArray array) -> nonEmpty rest
-          | otherwise -> pure (Just (StreamK.cons array rest))
+          | BS.null bytes -> nonEmpty rest
+          | otherwise -> pure (Just (bytes, rest))
+          where
+            bytes = StreamlyBS.fromArray array
+{-# INLINE parseMany #-}
 
 -- | A stream with bytes put back before it.
 prepend :: ByteString -> StreamK m (Array Word8) -> StreamK m (Array Word8)
