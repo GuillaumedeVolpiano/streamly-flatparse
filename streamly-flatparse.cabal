@@ -63,11 +63,11 @@ test-suite streamly-flatparse-test
   main-is:        Main.hs
   ghc-options:    -threaded
   build-depends:
-    , base                 >=4.19 && <4.22
-    , bytestring           ^>=0.12
-    , flatparse            ^>=0.5
-    , streamly-bytestring  ^>=0.2.3
-    , streamly-core        ^>=0.3.3
+    , base
+    , bytestring
+    , flatparse
+    , streamly-bytestring
+    , streamly-core
     , streamly-flatparse
     , tasty                ^>=1.5
     , tasty-hunit          ^>=0.10
@@ -82,10 +82,10 @@ benchmark streamly-flatparse-bench
   main-is:        Main.hs
   ghc-options:    -threaded -O2
   build-depends:
-    , base                 >=4.19 && <4.22
-    , bytestring           ^>=0.12
-    , flatparse            ^>=0.5
-    , streamly-bytestring  ^>=0.2.3
-    , streamly-core        ^>=0.3.3
+    , base
+    , bytestring
+    , flatparse
+    , streamly-bytestring
+    , streamly-core
     , streamly-flatparse
     , tasty-bench          >=0.4 && <0.6
