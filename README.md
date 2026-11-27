@@ -13,13 +13,15 @@ parsed.
 ```haskell
 {-# LANGUAGE OverloadedStrings #-}
 
-import FlatParse.Basic qualified as FP
+import Data.Word (Word8)
+import FlatParse.Basic (Parser, anyAsciiDecimalInt, byteString)
+import Streamly.Data.Array (Array)
 import Streamly.Data.Stream (Stream)
-import Streamly.External.FlatParse
+import Streamly.External.FlatParse (ParseError, parseMany)
 
 -- A decimal number on a line of its own.
-line :: FP.Parser () Int
-line = FP.anyAsciiDecimalInt <* FP.byteString "\n"
+line :: Parser () Int
+line = anyAsciiDecimalInt <* byteString "\n"
 
 numbers :: Monad m => Stream m (Array Word8) -> Stream m (Either (ParseError ()) Int)
 numbers = parseMany 100 line

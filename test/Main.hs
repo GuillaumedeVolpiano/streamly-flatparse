@@ -2,17 +2,18 @@
 module Main (main) where
 
 import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
-import Data.ByteString.Char8 qualified as BS8
+import Data.ByteString qualified as BS (concat, null, splitAt)
+import Data.ByteString.Char8 (pack)
 import Data.Functor.Identity (Identity (..))
-import FlatParse.Basic qualified as FP
-import Streamly.Data.Stream qualified as Stream
-import Streamly.Data.StreamK (StreamK)
-import Streamly.Data.StreamK qualified as StreamK
-import Streamly.External.ByteString qualified as StreamlyBS
-import Streamly.External.FlatParse
-import Streamly.Data.Array (Array)
 import Data.Word (Word8)
+import FlatParse.Basic (Parser, anyAsciiDecimalInt, anyWord8, byteStringOf, err,
+                        optional_, skipMany, skipSatisfyAscii, skipSome, word8)
+import Streamly.Data.Array (Array)
+import Streamly.Data.Stream (fromList, toList)
+import Streamly.Data.StreamK (StreamK, fromStream, toStream)
+import Streamly.External.ByteString (fromArray, toArray)
+import Streamly.External.FlatParse (ParseError (..), parse, parseArray,
+                                    parseBreak, parseBreakOn, parseMany)
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 import Test.Tasty.QuickCheck (Positive (..), testProperty, (===))
@@ -27,26 +28,26 @@ pieces size bytes
 
 -- | Bytes as a stream of arrays of a size.
 cut :: Int -> ByteString -> StreamK Identity (Array Word8)
-cut size = StreamK.fromStream . Stream.fromList . map StreamlyBS.toArray . pieces size
+cut size = fromStream . fromList . map toArray . pieces size
 
 -- | The result of a parse, with the bytes of the stream given back.
 broken :: (Either (ParseError e) a, StreamK Identity (Array Word8)) -> (Either (ParseError e) a, ByteString)
-broken (outcome, rest) = (outcome, BS.concat (map StreamlyBS.fromArray (runIdentity (Stream.toList (StreamK.toStream rest)))))
+broken (outcome, rest) = (outcome, BS.concat (map fromArray (runIdentity (toList (toStream rest)))))
 
 -- | A name, a colon, a decimal number and a line feed. A second colon is
 -- an error that no further byte can mend.
-entry :: FP.Parser String (ByteString, Int)
+entry :: Parser String (ByteString, Int)
 entry = do
-  name <- FP.byteStringOf (FP.skipSome (FP.skipSatisfyAscii (\c -> c >= 'a' && c <= 'z')))
-  FP.word8 58
-  FP.optional_ (FP.word8 58 *> FP.err "two colons")
-  value <- FP.anyAsciiDecimalInt
-  FP.word8 10
+  name <- byteStringOf (skipSome (skipSatisfyAscii (\c -> c >= 'a' && c <= 'z')))
+  word8 58
+  optional_ (word8 58 *> err "two colons")
+  value <- anyAsciiDecimalInt
+  word8 10
   pure (name, value)
 
 -- | Some digits: a parser that succeeds on a prefix of what it accepts.
-digits :: FP.Parser () Int
-digits = FP.anyAsciiDecimalInt
+digits :: Parser () Int
+digits = anyAsciiDecimalInt
 
 tests :: TestTree
 tests =
@@ -55,9 +56,9 @@ tests =
     [ testGroup
         "parseArray"
         [ testCase "the whole input in one array" $ do
-            parseArray entry (StreamlyBS.toArray "volume:42\nrest") @?= Right ("volume", 42)
-            parseArray entry (StreamlyBS.toArray "volume:42") @?= Left Mismatch
-            parseArray entry (StreamlyBS.toArray "volume::42\n") @?= Left (ParserError "two colons")
+            parseArray entry (toArray "volume:42\nrest") @?= Right ("volume", 42)
+            parseArray entry (toArray "volume:42") @?= Left Mismatch
+            parseArray entry (toArray "volume::42\n") @?= Left (ParserError "two colons")
         ]
     , testGroup
         "parseBreak"
@@ -71,7 +72,7 @@ tests =
             broken (runIdentity (parseBreak 100 entry (cut size "volume::42\nbalance:7\n")))
               === (Left (ParserError "two colons"), "volume::42\nbalance:7\n")
         , testCase "an error stops before the rest of the stream is read" $ do
-            let endless = StreamK.fromStream (Stream.fromList (map StreamlyBS.toArray ("a::" : repeat "x")))
+            let endless = fromStream (fromList (map toArray ("a::" : repeat "x")))
             fst (runIdentity (parseBreak 1000 entry endless)) @?= Left (ParserError "two colons")
         , testProperty "the parser is given no more than the limit, exactly" $ \(Positive size) ->
             let input = "volume:42\nmore"
@@ -85,10 +86,10 @@ tests =
             -- Exactly as many bytes as allowed, and no more to come.
             broken (runIdentity (parseBreak 8 entry (cut 3 "volume:4"))) @?= (Left Mismatch, "volume:4")
         , testCase "endless input that never fits" $ do
-            let endless = StreamK.fromStream (Stream.fromList (map StreamlyBS.toArray (repeat "abc")))
+            let endless = fromStream (fromList (map toArray (repeat "abc")))
             fst (runIdentity (parseBreak 50 entry endless)) @?= Left (TooLong 50)
         , testCase "empty arrays are passed over" $
-            broken (runIdentity (parseBreak 100 entry (StreamK.fromStream (Stream.fromList (map StreamlyBS.toArray ["", "vol", "", "ume:4", "", "2\nx"])))))
+            broken (runIdentity (parseBreak 100 entry (fromStream (fromList (map toArray ["", "vol", "", "ume:4", "", "2\nx"])))))
               @?= (Right ("volume", 42), "x")
         , testCase "a parser that succeeds on a prefix stops too early: what the documentation warns of" $ do
             fst (runIdentity (parseBreak 100 digits (cut 2 "12345 "))) @?= Right 12
@@ -99,7 +100,7 @@ tests =
     , testGroup
         "parseBreakOn"
         [ testProperty "the parser runs on the bytes up to the delimiter, however they are cut" $ \(Positive size) ->
-            broken (runIdentity (parseBreakOn "\r\n\r\n" 100 (FP.byteStringOf (FP.skipMany FP.anyWord8) :: FP.Parser () ByteString) (cut size "a: b\r\nc: d\r\n\r\nbody")))
+            broken (runIdentity (parseBreakOn "\r\n\r\n" 100 (byteStringOf (skipMany anyWord8) :: Parser () ByteString) (cut size "a: b\r\nc: d\r\n\r\nbody")))
               === (Right "a: b\r\nc: d\r\n\r\n", "body")
         , testCase "a parser that succeeds on a prefix is safe here" $
             broken (runIdentity (parseBreakOn " " 100 digits (cut 2 "12345 678"))) @?= (Right 12345, "678")
@@ -117,17 +118,17 @@ tests =
     , testGroup
         "parseMany"
         [ testProperty "every entry of a stream, however it is cut" $ \(Positive size) ->
-            let input = BS.concat [BS8.pack ("name:" <> show n <> "\n") | n <- [1 .. 50 :: Int]]
-             in runIdentity (Stream.toList (parseMany 100 entry (StreamK.toStream (cut size input))))
+            let input = BS.concat [pack ("name:" <> show n <> "\n") | n <- [1 .. 50 :: Int]]
+             in runIdentity (toList (parseMany 100 entry (toStream (cut size input))))
                   === [Right ("name", n) | n <- [1 .. 50]]
         , testCase "the first error is the last element" $
-            runIdentity (Stream.toList (parseMany 100 entry (StreamK.toStream (cut 4 "a:1\nb::2\nc:3\n"))))
+            runIdentity (toList (parseMany 100 entry (toStream (cut 4 "a:1\nb::2\nc:3\n"))))
               @?= [Right ("a", 1), Left (ParserError "two colons")]
         , testCase "input cut short ends on a mismatch, and empty input gives nothing" $ do
-            runIdentity (Stream.toList (parseMany 100 entry (StreamK.toStream (cut 4 "a:1\nb:")))) @?= [Right ("a", 1), Left Mismatch]
-            runIdentity (Stream.toList (parseMany 100 entry (StreamK.toStream (cut 4 "")))) @?= []
+            runIdentity (toList (parseMany 100 entry (toStream (cut 4 "a:1\nb:")))) @?= [Right ("a", 1), Left Mismatch]
+            runIdentity (toList (parseMany 100 entry (toStream (cut 4 "")))) @?= []
         , testProperty "an entry longer than the limit is the last element, however the stream is cut" $ \(Positive size) ->
-            runIdentity (Stream.toList (parseMany 8 entry (StreamK.toStream (cut size "a:1\nb:2\nvolume:30\nc:3\n"))))
+            runIdentity (toList (parseMany 8 entry (toStream (cut size "a:1\nb:2\nvolume:30\nc:3\n"))))
               === [Right ("a", 1), Right ("b", 2), Left (TooLong 8)]
         ]
     ]
