@@ -26,12 +26,20 @@ source-repository head
   location: https://github.com/GuillaumedeVolpiano/streamly-flatparse.git
 
 common shared
-  default-language:   GHC2024
+  default-language:   GHC2021
   default-extensions:
+    DataKinds
+    DerivingStrategies
+    DisambiguateRecordFields
     DuplicateRecordFields
+    ExplicitNamespaces
+    GADTs
+    LambdaCase
+    MonoLocalBinds
     NoFieldSelectors
     OverloadedRecordDot
     OverloadedStrings
+    RoleAnnotations
 
   ghc-options:
     -Wall -Wcompat -Wredundant-constraints -Wmissing-deriving-strategies
@@ -42,7 +50,7 @@ library
   hs-source-dirs:  src
   exposed-modules: Streamly.External.FlatParse
   build-depends:
-    , base                 ^>=4.21
+    , base                 >=4.19 && <4.22
     , bytestring           ^>=0.12
     , flatparse            ^>=0.5
     , streamly-bytestring  ^>=0.2.3
@@ -55,7 +63,7 @@ test-suite streamly-flatparse-test
   main-is:        Main.hs
   ghc-options:    -threaded
   build-depends:
-    , base                 ^>=4.21
+    , base                 >=4.19 && <4.22
     , bytestring           ^>=0.12
     , flatparse            ^>=0.5
     , streamly-bytestring  ^>=0.2.3
@@ -74,7 +82,7 @@ benchmark streamly-flatparse-bench
   main-is:        Main.hs
   ghc-options:    -threaded -O2
   build-depends:
-    , base                 ^>=4.21
+    , base                 >=4.19 && <4.22
     , bytestring           ^>=0.12
     , flatparse            ^>=0.5
     , streamly-bytestring  ^>=0.2.3
