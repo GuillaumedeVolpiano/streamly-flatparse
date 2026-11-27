@@ -1,6 +1,6 @@
 cabal-version:   3.12
 name:            streamly-flatparse
-version:         0.1.0.1
+version:         0.1.0.2
 synopsis:        Run flatparse parsers on Streamly streams of byte arrays
 description:
   flatparse parsers are fast, but need their whole input in one piece.
