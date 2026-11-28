@@ -1,6 +1,6 @@
 cabal-version:   3.12
 name:            streamly-flatparse
-version:         0.1.0.3
+version:         0.1.0.0
 synopsis:        Run flatparse parsers on Streamly streams of byte arrays
 description:
   flatparse parsers are fast, but need their whole input in one piece.
@@ -12,8 +12,8 @@ description:
 homepage:        https://github.com/GuillaumedeVolpiano/streamly-flatparse
 license:         BSD-3-Clause
 license-file:    LICENSE
-author:          GuillaumedeVolpiano
-maintainer:      xavier@wheredoibegin.fr
+author:          Xavier Dectot
+maintainer:      Xavier Dectot <xavier@wheredoibegin.fr>
 category:        Parsing, Streamly
 build-type:      Simple
 tested-with:     GHC ==9.8.4 || ==9.10.3 || ==9.12.4
